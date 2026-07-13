@@ -57,6 +57,6 @@ DEEPSEEK_MODEL = "deepseek-chat"
 
 ### 依赖装包失败？
 
-常见原因是 `xgboost` / `gensim` / `kaleido` 过重。仓库已将云端依赖裁剪到 `requirements.txt`。
-
-修改并推送后，在 Streamlit Cloud 点 **Reboot app** / **Rerun**。
+1. 点 **Manage app** → 看终端最后出现的 `ERROR:` / `No matching distribution`
+2. 仓库已删除 `packages.txt`（apt 失败也会显示成 requirements 错误）
+3. `requirements.txt` 已改为精简锁定版本；推送后点 **Reboot app**

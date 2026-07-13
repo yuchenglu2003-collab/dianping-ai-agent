@@ -59,7 +59,7 @@ class CleanTableTool(BaseTool):
             df.to_parquet(parquet_path, index=False)
             out_path = parquet_path
         except Exception:
-            parquet_path = None
+            pass
 
 
         non_null_rates = {}

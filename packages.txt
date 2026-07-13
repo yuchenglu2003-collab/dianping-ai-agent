@@ -1,3 +1,0 @@
-# Streamlit Community Cloud apt 包（中文词云字体）
-fonts-noto-cjk
-fontconfig
