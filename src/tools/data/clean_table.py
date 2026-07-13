@@ -51,12 +51,16 @@ class CleanTableTool(BaseTool):
 
         out_dir = Path(ctx.paths.get("clean", ctx.project_root / "data" / "clean"))
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{ctx.task.task_id}_clean.parquet"
-        df.to_parquet(out_path, index=False)
-
-        # 同时落一份 csv 方便人工查看
         csv_path = out_dir / f"{ctx.task.task_id}_clean.csv"
         df.to_csv(csv_path, index=False)
+        out_path = csv_path
+        try:
+            parquet_path = out_dir / f"{ctx.task.task_id}_clean.parquet"
+            df.to_parquet(parquet_path, index=False)
+            out_path = parquet_path
+        except Exception:
+            parquet_path = None
+
 
         non_null_rates = {}
         for c in key_cols:

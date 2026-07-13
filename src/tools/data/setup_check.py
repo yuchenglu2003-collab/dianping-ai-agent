@@ -11,7 +11,6 @@ REQUIRED_PACKAGES = [
     "numpy",
     "plotly",
     "jieba",
-    "sklearn",
     "yaml",
     "jinja2",
     "httpx",

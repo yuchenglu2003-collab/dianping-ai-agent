@@ -55,8 +55,8 @@ DEEPSEEK_MODEL = "deepseek-chat"
 
 `https://xxx.streamlit.app`
 
-## 说明
+### 依赖装包失败？
 
-- 密钥只放在 Streamlit Secrets，不要提交到 Git
-- 云端会读 Secrets；本地仍可用 UI 输入或 `.env`
-- 免费实例磁盘不持久，上传数据/报告重启后可能清空
+常见原因是 `xgboost` / `gensim` / `kaleido` 过重。仓库已将云端依赖裁剪到 `requirements.txt`。
+
+修改并推送后，在 Streamlit Cloud 点 **Reboot app** / **Rerun**。
