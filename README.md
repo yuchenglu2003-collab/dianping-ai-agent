@@ -2,7 +2,8 @@
 
 **必须配置 API 密钥**。大模型负责理解任务、规划步骤、撰写报告；数值计算由本地 Python 工具完成。
 
-设计文档：[`plan.md`](./plan.md)、[`architecture.md`](./architecture.md)。
+设计文档：[`plan.md`](./plan.md)、[`architecture.md`](./architecture.md)。  
+云端部署：[`DEPLOY.md`](./DEPLOY.md)。
 
 ## 快速开始
 
