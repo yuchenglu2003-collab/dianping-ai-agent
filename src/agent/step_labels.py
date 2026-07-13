@@ -27,4 +27,5 @@ STEP_LABELS: dict[str, str] = {
     "auth": "校验 API 密钥",
     "parse_task": "LLM 理解任务",
     "plan": "LLM 规划步骤",
+    "LLM_SCHEMA_MAP": "LLM 识别字段",
 }

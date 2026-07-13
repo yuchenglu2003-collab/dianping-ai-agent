@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-from src.tools._data_io import load_analysis_frame, resolve_tool_input_path
+from src.tools._data_io import load_analysis_frame_from_ctx, resolve_tool_input_path
 from src.tools.base import BaseTool, ToolResult
 from src.tools.viz._plotly_io import save_plotly_figure
 
@@ -20,7 +20,7 @@ class SalesForecastTool(BaseTool):
         if not input_path.exists():
             return ToolResult(success=False, error=f"找不到数据: {input_path}")
 
-        df = load_analysis_frame(input_path, schema_hints=ctx.config.get("schema_hints"))
+        df = load_analysis_frame_from_ctx(ctx, input_path)
         if "sales_qty" not in df.columns:
             return ToolResult(success=False, error=f"销量预测需要 sales_qty/销量。当前列：{list(df.columns)[:20]}")
         if "review_time" not in df.columns:

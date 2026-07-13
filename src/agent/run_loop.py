@@ -22,7 +22,7 @@ def run_with_progress(
 ) -> "AgentState":
     """
     LLM 驱动主流程：
-    AUTH → PROFILE → LLM_PARSE_TASK → LLM_PLAN → EXECUTE → CRITIC → DONE
+    AUTH → PROFILE → LLM_SCHEMA_MAP → LLM_PARSE_TASK → LLM_PLAN → EXECUTE → CRITIC → DONE
     （报告步骤在 plan 内由 llm_render_report 完成）
     """
 
@@ -54,10 +54,51 @@ def run_with_progress(
         encoding="utf-8",
     )
 
+    # ---- LLM SCHEMA MAP ----
+    orch.state.status = "LLM_SCHEMA_MAP"
+    _progress(0.09, "LLM 识别数据字段...")
+    goal_text = raw_task_text or orch.task.goal or orch.task.raw_text
+    try:
+        schema_map = orch.map_schema_with_llm(schema, goal_text=goal_text or "")
+        mapping_path = orch.run_dir / "column_mapping.json"
+        mapping_path.write_text(
+            json.dumps(schema_map, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        orch.state.artifacts["column_mapping"] = str(mapping_path)
+        orch.logger.info(
+            "字段映射 source=%s kind=%s mapping=%s",
+            schema_map.get("source"),
+            schema_map.get("table_kind"),
+            schema_map.get("mapping"),
+        )
+        # 刷新 schema 快照（含 LLM 映射）
+        (orch.run_dir / "schema_summary.json").write_text(
+            json.dumps(schema.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        orch.logger.warning("字段映射失败，将仅用规则 hints: %s", e)
+        # 退回规则映射，避免后续工具完全不认列
+        from src.agent.schema_mapper import rule_mapping_from_table
+
+        table = schema.primary()
+        fallback = rule_mapping_from_table(table, orch.config.get("schema_hints")) if table else {}
+        orch.ctx.extras["column_mapping"] = fallback
+        if table:
+            table.mapped_columns = dict(fallback)
+        (orch.run_dir / "column_mapping.json").write_text(
+            json.dumps(
+                {"table_kind": table.table_kind if table else "unknown", "mapping": fallback, "source": "rules_fallback", "notes": [str(e)]},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        orch.state.artifacts["column_mapping"] = str(orch.run_dir / "column_mapping.json")
     # ---- LLM PARSE TASK ----
     orch.state.status = "LLM_PARSE_TASK"
     _progress(0.12, "LLM 理解任务要求...")
-    goal_text = raw_task_text or orch.task.goal or orch.task.raw_text
     try:
         parsed = orch.parse_task_with_llm(goal_text, schema)
         orch.task = parsed

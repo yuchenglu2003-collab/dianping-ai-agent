@@ -30,17 +30,53 @@ def ensure_time_column(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def apply_column_mapping(df: pd.DataFrame, column_mapping: dict[str, str] | None) -> pd.DataFrame:
+    """按 raw->std 映射重命名；已是标准名的列保持不变。"""
+    if not column_mapping:
+        return df
+    rename = {raw: std for raw, std in column_mapping.items() if raw in df.columns and std not in df.columns}
+    # 若清洗后已是标准名，也允许 identity
+    if not rename:
+        return df
+    return rename_to_standard(df, rename)
+
+
 def load_analysis_frame(
     path: Path,
     *,
     schema_hints: dict[str, list[str]] | None = None,
+    column_mapping: dict[str, str] | None = None,
+    nrows: int | None = None,
 ) -> pd.DataFrame:
-    """读取分析用表，并按 schema_hints 映射为标准列名。"""
-    df = load_table(path)
-    mapped = apply_schema_hints(df, schema_hints or {})
-    if mapped:
-        df = rename_to_standard(df, mapped)
+    """读取分析用表：优先用 LLM/运行期 column_mapping，否则用 schema_hints。"""
+    df = load_table(path, nrows=nrows) if nrows is not None else load_table(path)
+    if column_mapping:
+        df = apply_column_mapping(df, column_mapping)
+    else:
+        mapped = apply_schema_hints(df, schema_hints or {})
+        if mapped:
+            df = rename_to_standard(df, mapped)
     return ensure_time_column(df)
+
+
+def mapping_from_ctx(ctx: Any) -> dict[str, str]:
+    raw = ctx.extras.get("column_mapping") if getattr(ctx, "extras", None) else None
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def load_analysis_frame_from_ctx(
+    ctx: Any,
+    path: Path | None = None,
+    *,
+    nrows: int | None = None,
+) -> pd.DataFrame:
+    p = path or resolve_tool_input_path(ctx, {})
+    return load_analysis_frame(
+        p,
+        schema_hints=ctx.config.get("schema_hints"),
+        column_mapping=mapping_from_ctx(ctx),
+        nrows=nrows,
+    )
 
 
 def resolve_tool_input_path(ctx: Any, kwargs: dict[str, Any]) -> Path:

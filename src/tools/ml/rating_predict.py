@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.tools._data_io import load_analysis_frame, resolve_tool_input_path
+from src.tools._data_io import load_analysis_frame_from_ctx, resolve_tool_input_path
 from src.tools.base import BaseTool, ToolResult
 
 
@@ -28,7 +28,7 @@ class RatingPredictTool(BaseTool):
         if not input_path.exists():
             return ToolResult(success=False, error=f"找不到数据: {input_path}")
 
-        df = load_analysis_frame(input_path, schema_hints=ctx.config.get("schema_hints"))
+        df = load_analysis_frame_from_ctx(ctx, input_path)
         if "content" not in df.columns or "score" not in df.columns:
             return ToolResult(success=False, error="评分预测需要 content 与 score 字段")
 

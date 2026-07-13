@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -226,6 +227,11 @@ def main() -> None:
             if state.llm_usage:
                 with st.expander("LLM 用量"):
                     st.json(state.llm_usage)
+
+            mapping_path = state.artifacts.get("column_mapping")
+            if mapping_path and Path(mapping_path).exists():
+                with st.expander("字段识别（原始列 → 标准字段）"):
+                    st.json(json.loads(Path(mapping_path).read_text(encoding="utf-8")))
 
             if state.status != "DONE":
                 st.warning(f"任务状态：{state.status}")

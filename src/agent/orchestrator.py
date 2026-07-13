@@ -172,6 +172,31 @@ class Orchestrator:
             self.ctx.extras["ui_api_key"] = self._ui_api_key
         return auth
 
+    def map_schema_with_llm(self, schema: SchemaSummary, goal_text: str = "") -> dict[str, Any]:
+        self.ensure_auth()
+        assert self._gateway is not None
+        from src.agent.schema_mapper import LLMSchemaMapper
+
+        mapper = LLMSchemaMapper(self._gateway)
+        result = mapper.map(
+            schema,
+            schema_hints=self.config.get("schema_hints"),
+            goal_text=goal_text,
+        )
+        mapping = dict(result.get("mapping") or {})
+        self.ctx.extras["column_mapping"] = mapping
+        self.ctx.extras["schema_map_meta"] = {
+            "table_kind": result.get("table_kind"),
+            "source": result.get("source"),
+            "notes": result.get("notes") or [],
+        }
+        # 回写 schema 摘要里的 mapped_columns，便于规划器看见
+        if schema.tables:
+            schema.tables[0].mapped_columns = dict(mapping)
+            if result.get("table_kind"):
+                schema.tables[0].table_kind = str(result["table_kind"])
+        return result
+
     def parse_task_with_llm(self, goal_text: str, schema: SchemaSummary) -> TaskSpec:
         self.ensure_auth()
         assert self._gateway is not None

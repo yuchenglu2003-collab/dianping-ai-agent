@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.data_resolver import load_table
 from src.infra.schema_adapter import apply_schema_hints, rename_to_standard
-from src.tools._data_io import ensure_time_column
+from src.tools._data_io import apply_column_mapping, ensure_time_column, mapping_from_ctx
 from src.tools.base import BaseTool, ToolResult
 
 
@@ -22,8 +22,12 @@ class CleanTableTool(BaseTool):
         df = load_table(input_path)
         raw_rows = len(df)
 
-        mapped = apply_schema_hints(df, ctx.config.get("schema_hints", {}))
-        df = rename_to_standard(df, mapped)
+        col_map = mapping_from_ctx(ctx)
+        if col_map:
+            df = apply_column_mapping(df, col_map)
+        else:
+            mapped = apply_schema_hints(df, ctx.config.get("schema_hints", {}))
+            df = rename_to_standard(df, mapped)
         df = ensure_time_column(df)
 
         params = ctx.params

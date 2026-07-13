@@ -6,9 +6,7 @@ from typing import Any
 import pandas as pd
 import plotly.express as px
 
-from src.data_resolver import load_table
-from src.infra.schema_adapter import apply_schema_hints, rename_to_standard
-from src.tools._data_io import resolve_tool_input_path
+from src.tools._data_io import load_analysis_frame_from_ctx, resolve_tool_input_path
 from src.tools.base import BaseTool, ToolResult
 from src.tools.viz._plotly_io import save_plotly_figure
 
@@ -23,9 +21,7 @@ class RfmSegmentTool(BaseTool):
             return ToolResult(success=False, error=f"找不到数据: {input_path}")
 
         max_rows = int(ctx.config.get("defaults", {}).get("behavior_max_rows", 200000))
-        raw = load_table(input_path, nrows=max_rows)
-        mapped = apply_schema_hints(raw, ctx.config.get("schema_hints") or {})
-        df = rename_to_standard(raw, mapped)
+        df = load_analysis_frame_from_ctx(ctx, input_path, nrows=max_rows)
 
         if "user_id" not in df.columns:
             return ToolResult(success=False, error="RFM 需要 user_id")
