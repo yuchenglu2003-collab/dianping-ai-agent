@@ -73,7 +73,8 @@ class SalesForecastTool(BaseTool):
         # 门店对比
         if "shop_id" in work.columns:
             shop = (
-                work.groupby(work["shop_id"].astype(str), as_index=False)["sales_qty"]
+                work.assign(shop_id=work["shop_id"].astype(str))
+                .groupby("shop_id", as_index=False)["sales_qty"]
                 .sum()
                 .sort_values("sales_qty", ascending=False)
                 .head(20)

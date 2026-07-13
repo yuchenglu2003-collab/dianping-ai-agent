@@ -38,9 +38,15 @@ class PlotDistributionsTool(BaseTool):
             metrics[f"{name}_median"] = float(s.median())
 
         def _topk_bar(series: pd.Series, name: str, title: str, value_name: str = "count") -> None:
-            counts = series.dropna().astype(str).value_counts().head(30).reset_index()
-            counts.columns = ["label", value_name]
-            if counts.empty:
+            counts = (
+                series.dropna()
+                .astype(str)
+                .value_counts()
+                .head(30)
+                .rename_axis("label")
+                .reset_index(name=value_name)
+            )
+            if counts.empty or len(counts.columns) < 2:
                 return
             fig = px.bar(counts, x="label", y=value_name, title=title)
             base = ctx.artifact_store.figure_path(name).with_suffix("")
@@ -59,15 +65,16 @@ class PlotDistributionsTool(BaseTool):
             title = "门店销量 Top30" if "sales_qty" in df.columns else "门店评论量 Top30"
             if "sales_qty" in df.columns:
                 tmp = df[["shop_id", "sales_qty"]].copy()
+                tmp["shop_id"] = tmp["shop_id"].astype(str)
                 tmp["sales_qty"] = pd.to_numeric(tmp["sales_qty"], errors="coerce")
+                tmp = tmp.dropna(subset=["shop_id", "sales_qty"])
                 shop = (
-                    tmp.dropna(subset=["shop_id"])
-                    .groupby(tmp["shop_id"].astype(str), as_index=False)["sales_qty"]
+                    tmp.groupby("shop_id", as_index=False)["sales_qty"]
                     .sum()
                     .sort_values("sales_qty", ascending=False)
                     .head(30)
+                    .rename(columns={"shop_id": "label"})
                 )
-                shop.columns = ["label", "sales_qty"]
                 if len(shop):
                     fig = px.bar(shop, x="label", y="sales_qty", title=title)
                     base = ctx.artifact_store.figure_path("shop_review_count").with_suffix("")

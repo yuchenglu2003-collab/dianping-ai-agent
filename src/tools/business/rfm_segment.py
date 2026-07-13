@@ -99,8 +99,9 @@ class RfmSegmentTool(BaseTool):
             return "一般用户"
 
         g["segment"] = g.apply(segment, axis=1)
-        seg_counts = g["segment"].value_counts().reset_index()
-        seg_counts.columns = ["segment", "users"]
+        seg_counts = (
+            g["segment"].value_counts().rename_axis("segment").reset_index(name="users")
+        )
 
         fig = px.bar(seg_counts, x="segment", y="users", title="RFM 用户分层人数")
         base = ctx.artifact_store.figure_path("rfm_segments").with_suffix("")
