@@ -1,0 +1,12 @@
+# 第二周：归因 + 评分预测
+# 数据：data/raw/week1_reviews.csv（data1）
+
+goal: 做好评归因（口味/服务/环境、评论长度）并构建评分预测模型对比 NB/RF/HGB
+deliverables:
+  - attribution
+  - rating_model
+  - report
+acceptance:
+  need_clean_data: true
+params:
+  positive_threshold: 4

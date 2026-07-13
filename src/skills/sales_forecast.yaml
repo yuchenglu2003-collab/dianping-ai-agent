@@ -1,5 +1,5 @@
 name: sales_forecast
-description: 销量预测与异常检测（工具待实现）
-intent_keywords: [销量预测, 异常]
-tools: []
-status: planned
+description: 销量预测与异常检测
+intent_keywords: [销量预测, 异常, 门店销量]
+tools: [sales_forecast]
+required_columns: [sales_qty, review_time]

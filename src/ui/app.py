@@ -94,7 +94,31 @@ def main() -> None:
     upload_root.mkdir(parents=True, exist_ok=True)
 
     st.title("数据分析 Agent")
-    st.caption("直连 DeepSeek API。上传数据 + 描述任务，由大模型理解、规划并撰写报告。")
+    st.caption("覆盖四周课程：评论清洗EDA/词云、归因与评分预测、漏斗RFM、销量预测。上传对应数据 + 选任务或自写要求。")
+
+    CURRICULUM = {
+        "自定义任务": "",
+        "第一周：清洗 + EDA + 词云（用 data1/week1_reviews）": (
+            "对大众点评评论数据做清洗（缺失/异常/去重），输出干净数据集；"
+            "绘制门店数量与评分分布；做时序分析（评论量、评分、用户趋势与评论长度分布）；"
+            "对评论分词并制作词云，给出高频词初步结论；最后写分析报告。"
+        ),
+        "第二周：归因 + 评分预测（用 data1/week1_reviews）": (
+            "分析口味、服务、环境在好评中的占比，并分析评论长短与好评关系，输出归因报告；"
+            "用评论文本做评分预测（TF-IDF + 朴素贝叶斯/随机森林/梯度提升对比准确率与F1）；"
+            "给出模型对比表与结论报告。"
+        ),
+        "第三周：漏斗 + RFM（用 data2/week3_behavior）": (
+            "基于用户行为日志计算 PV、UV、CTR、CVR、GMV、DAU/ARPU/ARPPU，绘制流量漏斗；"
+            "构建 RFM 用户分层（重要价值/发展/保持/挽留等）并给出差异化运营策略；输出报告。"
+        ),
+        "第四周：销量预测与异常（用 data3/week4_sales）": (
+            "分析门店销量与月度/价格关系，检测销量与单价异常；"
+            "构建简易销量预测并对比门店销量，输出《门店销量预测与异常监控报告》。"
+        ),
+    }
+    preset = st.selectbox("课程任务模板", list(CURRICULUM.keys()))
+    preset_text = CURRICULUM[preset]
 
     # ---- 密钥：仅使用环境变量 / Streamlit Secrets / .env ----
     auth = require_api_key(project_root=root, config=config, ping=False)
@@ -120,11 +144,12 @@ def main() -> None:
 
     task_text = st.text_area(
         "任务要求",
+        value=preset_text,
         placeholder=(
             "例如：对评论数据做清洗，输出评分分布和时序趋势图，"
             "并做词云分析高频关键词；如有需要附上清洗后的数据。"
         ),
-        height=160,
+        height=180,
     )
 
     can_run = auth.ok

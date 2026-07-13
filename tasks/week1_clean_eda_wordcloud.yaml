@@ -1,0 +1,16 @@
+# 第一周：清洗 + EDA + 词云
+# 数据：data/raw/week1_reviews.csv（data1）
+
+goal: 完成大众点评评论数据清洗、探索性分析与词云
+deliverables:
+  - clean_data
+  - figures
+  - timeseries
+  - wordcloud
+  - report
+acceptance:
+  need_clean_data: true
+  figures_required: true
+params:
+  drop_duplicates: true
+  positive_threshold: 4

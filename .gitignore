@@ -17,10 +17,14 @@ venv/
 *.joblib
 *.pkl
 
-# 运行产物与原始数据（样例数据可例外提交）
+# 运行产物与原始数据（样例与课程数据可例外提交）
 data/raw/*
 !data/raw/.gitkeep
 !data/raw/sample_reviews.csv
+# 本地课程数据软链不提交
+data/raw/week1_reviews.csv
+data/raw/week3_behavior.csv
+data/raw/week4_sales.csv
 data/uploads/*
 !data/uploads/.gitkeep
 data/clean/*

@@ -27,6 +27,11 @@ ALLOWED_TOOLS_FALLBACK = {
     "eda_timeseries",
     "tokenize_jieba",
     "make_wordcloud",
+    "attribution_aspects",
+    "rating_predict",
+    "funnel_metrics",
+    "rfm_segment",
+    "sales_forecast",
     "llm_render_report",
     "render_report",
 }

@@ -1,5 +1,5 @@
 name: funnel_rfm
-description: 漏斗与 RFM（工具待实现）
-intent_keywords: [漏斗, rfm, arpu]
-tools: []
-status: planned
+description: 漏斗与 RFM
+intent_keywords: [漏斗, rfm, arpu, 流量]
+tools: [funnel_metrics, rfm_segment]
+required_columns_any: [event_type, user_id]

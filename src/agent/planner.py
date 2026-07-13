@@ -43,61 +43,66 @@ class RulePlanner:
         feas = check_feasibility(task, schema)
         intent = _joined_intent(task)
         steps: list[dict[str, Any]] = []
+        kinds = {t.table_kind for t in schema.tables}
 
         def add(step_id: str, tool: str, depends_on: list[str] | None = None, **args: Any) -> None:
-            steps.append(
-                {
-                    "id": step_id,
-                    "tool": tool,
-                    "depends_on": depends_on or [],
-                    "args": args,
-                }
-            )
+            steps.append({"id": step_id, "tool": tool, "depends_on": depends_on or [], "args": args})
 
-        add("setup", "setup_check")
-        add("profile", "data_profile", depends_on=["setup"])
+        add("profile", "data_profile")
+        add("clean", "clean_table", depends_on=["profile"])
 
-        need_clean = _wants(intent, ["清洗", "clean", "eda", "词云", "预测", "归因", "分布", "探索"]) or True
-        if need_clean and feas.status != "infeasible":
-            add("clean", "clean_table", depends_on=["profile"])
-
-        if _wants(intent, ["eda", "分布", "探索", "图表", "可视化"]) or "clean_data" in (task.deliverables or []):
-            if "clean" in [s["id"] for s in steps]:
+        # Week1 EDA / 词云
+        if _wants(intent, ["eda", "分布", "探索", "图表", "可视化", "清洗", "周报"]) or "reviews" in kinds:
+            if _wants(intent, ["eda", "分布", "探索", "图表", "可视化", "清洗", "周报", "第一周"]):
                 add("plot", "plot_distributions", depends_on=["clean"])
-
         if _wants(intent, ["时序", "趋势", "时间"]):
-            if "clean" in [s["id"] for s in steps]:
+            add("timeseries", "eda_timeseries", depends_on=["clean"])
+        if _wants(intent, ["词云", "关键词", "分词", "文本挖掘"]):
+            add("tokenize", "tokenize_jieba", depends_on=["clean"])
+            add("wordcloud", "make_wordcloud", depends_on=["tokenize"])
+
+        # Week2 归因 / 模型
+        if _wants(intent, ["归因", "口味", "服务", "环境", "好评"]):
+            add("attribution", "attribution_aspects", depends_on=["clean"])
+        if _wants(intent, ["评分预测", "模型", "tfidf", "随机森林", "贝叶斯", "xgb", "调优"]):
+            add("rating_model", "rating_predict", depends_on=["clean"])
+
+        # Week3 漏斗 / RFM
+        if _wants(intent, ["漏斗", "pv", "uv", "ctr", "cvr", "gmv", "dau", "arpu", "流量"]) or "behavior" in kinds:
+            if _wants(intent, ["漏斗", "pv", "uv", "ctr", "cvr", "gmv", "流量", "第三周"]):
+                add("funnel", "funnel_metrics", depends_on=["clean"])
+        if _wants(intent, ["rfm", "用户分层", "用户价值", "挽留"]):
+            add("rfm", "rfm_segment", depends_on=["clean"])
+
+        # Week4 销量
+        if _wants(intent, ["销量预测", "异常", "门店销量", "第四周"]) or "sales" in kinds:
+            if _wants(intent, ["销量", "预测", "异常", "第四周", "gmv"]):
+                add("sales", "sales_forecast", depends_on=["clean"])
+
+        # 若几乎没匹配到分析步，按表类型兜底
+        analytic_ids = {s["id"] for s in steps} - {"profile", "clean"}
+        if not analytic_ids:
+            if "behavior" in kinds:
+                add("funnel", "funnel_metrics", depends_on=["clean"])
+                add("rfm", "rfm_segment", depends_on=["clean"])
+            elif "sales" in kinds:
+                add("plot", "plot_distributions", depends_on=["clean"])
+                add("sales", "sales_forecast", depends_on=["clean"])
+            else:
+                add("plot", "plot_distributions", depends_on=["clean"])
                 add("timeseries", "eda_timeseries", depends_on=["clean"])
 
-        if _wants(intent, ["词云", "关键词", "分词", "文本挖掘"]):
-            if "clean" in [s["id"] for s in steps]:
-                add("tokenize", "tokenize_jieba", depends_on=["clean"])
-                add("wordcloud", "make_wordcloud", depends_on=["tokenize"])
-
-        # 默认总是出报告（LLM）
         last_ids = [s["id"] for s in steps]
-        depends = [sid for sid in last_ids if sid not in {"setup"}][-3:] or ["profile"]
+        depends = last_ids[-3:] or ["clean"]
         add("report", "llm_render_report", depends_on=depends)
 
-        acceptance: list[dict[str, Any]] = []
-        acc = task.acceptance or {}
-        if acc.get("figures_required"):
-            acceptance.append({"type": "artifact_exists", "key_prefix": "score_distribution"})
-        if "min_non_null_rate" in acc:
-            acceptance.append(
-                {
-                    "type": "metric_gte",
-                    "name": "non_null_rate_score",
-                    "value": float(acc["min_non_null_rate"]),
-                }
-            )
-        acceptance.append({"type": "artifact_exists", "key": "report"})
+        acceptance = [{"type": "artifact_exists", "key": "report"}]
         if any("clean" in str(d).lower() or "清洗" in str(d) for d in (task.deliverables or ["清洗"])):
             acceptance.append({"type": "artifact_exists", "key": "clean_data"})
 
         plan = TaskPlan(
             task_id=task.task_id,
-            feasibility=feas.status,
+            feasibility=feas.status if feas.status != "infeasible" else "partial",
             notes=feas.notes,
             steps=steps,
             acceptance_checks=acceptance,

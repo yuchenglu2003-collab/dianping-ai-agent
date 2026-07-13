@@ -1,0 +1,10 @@
+# 第四周：销量预测与异常
+# 数据：data/raw/week4_sales.csv（data3）
+
+goal: 分析门店销量、月度趋势，做简易销量预测与价格/销量异常检测，并输出报告
+deliverables:
+  - sales_forecast
+  - figures
+  - report
+params:
+  forecast_horizon_days: 14

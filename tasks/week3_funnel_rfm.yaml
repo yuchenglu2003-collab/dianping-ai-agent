@@ -1,0 +1,9 @@
+# 第三周：漏斗 + RFM
+# 数据：data/raw/week3_behavior.csv（data2，TSV）
+
+goal: 计算用户行为流量漏斗（PV/UV/CTR/CVR/GMV/ARPU）并做 RFM 用户分层与运营策略
+deliverables:
+  - funnel
+  - rfm
+  - report
+params: {}

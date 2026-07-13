@@ -9,14 +9,16 @@ def apply_schema_hints(df, schema_hints: dict[str, list[str]]) -> dict[str, str]
     lower_map = {str(c).lower(): str(c) for c in df.columns}
     mapped: dict[str, str] = {}
     used_std: set[str] = set()
+    used_src: set[str] = set()
 
     for std_name, aliases in (schema_hints or {}).items():
         candidates = [std_name, *(aliases or [])]
         for alias in candidates:
             src = lower_map.get(str(alias).lower())
-            if src and std_name not in used_std:
+            if src and std_name not in used_std and src not in used_src:
                 mapped[src] = std_name
                 used_std.add(std_name)
+                used_src.add(src)
                 break
     return mapped
 
@@ -27,11 +29,13 @@ def rename_to_standard(df, mapped: dict[str, str]):
 
 def infer_table_kind(mapped: dict[str, str]) -> str:
     standards = set(mapped.values())
+    if "event_type" in standards or ({"user_id", "product_id"} <= standards and "content" not in standards):
+        return "behavior"
+    if {"sales_qty", "review_time"} <= standards or {"sales_qty", "shop_id"} <= standards:
+        return "sales"
     if {"score", "content"} & standards or {"review_time", "content"} <= standards:
         return "reviews"
-    if {"sales_qty", "date"} <= standards or "sales_qty" in standards:
-        return "sales"
-    if {"event_type", "event_time"} <= standards or "event_type" in standards:
+    if {"event_type", "event_time"} <= standards:
         return "events"
     if "shop_name" in standards or ({"shop_id"} <= standards and "score" not in standards):
         return "shops"
