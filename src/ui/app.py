@@ -96,51 +96,21 @@ def main() -> None:
     st.title("数据分析 Agent")
     st.caption("直连 DeepSeek API。上传数据 + 描述任务，由大模型理解、规划并撰写报告。")
 
-    # ---- 密钥 ----
-    env_auth = require_api_key(project_root=root, config=config, ping=False)
-    default_hint = "已从环境变量 / .env 检测到密钥" if env_auth.ok else "粘贴 DeepSeek API Key（sk-...）"
-    api_key_input = st.text_input(
-        "DeepSeek API 密钥",
-        type="password",
-        placeholder=default_hint,
-        help="在 https://platform.deepseek.com 创建。也可写入 .env：DEEPSEEK_API_KEY=sk-...",
-    )
-    with st.expander("高级：DeepSeek 接口 / 模型", expanded=False):
-        base_url_input = st.text_input(
-            "DeepSeek Base URL",
-            value=str(config.get("llm", {}).get("base_url") or "https://api.deepseek.com/v1"),
-        )
-        model_input = st.text_input(
-            "模型",
-            value=str(config.get("llm", {}).get("model") or "deepseek-chat"),
-            help="常用：deepseek-chat；推理可用 deepseek-reasoner",
-        )
-    # 允许 UI 临时覆盖
-    if base_url_input.strip():
-        config.setdefault("llm", {})["base_url"] = base_url_input.strip()
-    if model_input.strip():
-        config.setdefault("llm", {})["model"] = model_input.strip()
-
-    # ---- UI 密钥会话持久化（密码框重跑时可能为空）----
-    if api_key_input.strip():
-        st.session_state["deepseek_api_key"] = api_key_input.strip()
-    effective_key = api_key_input.strip() or st.session_state.get("deepseek_api_key") or None
-    auth = require_api_key(project_root=root, ui_api_key=effective_key, config=config, ping=False)
+    # ---- 密钥：仅使用环境变量 / Streamlit Secrets / .env ----
+    auth = require_api_key(project_root=root, config=config, ping=False)
     if auth.ok:
-        st.caption(f"密钥状态：{auth.message} · 模型：{auth.model} · {auth.base_url}")
+        st.caption(f"DeepSeek：{auth.message} · 模型：{auth.model}")
         if st.button("测试 DeepSeek 连接", use_container_width=True):
-            test = require_api_key(
-                project_root=root,
-                ui_api_key=effective_key,
-                config=config,
-                ping=True,
-            )
+            test = require_api_key(project_root=root, config=config, ping=True)
             if test.ok:
                 st.success(test.message)
             else:
                 st.error(test.message)
     else:
-        st.warning(auth.message)
+        st.warning(
+            auth.message
+            + "（本地写入 .env 的 DEEPSEEK_API_KEY，云端在 Streamlit Secrets 配置）"
+        )
 
     uploaded = st.file_uploader(
         "数据集",
@@ -169,7 +139,7 @@ def main() -> None:
 
     if run:
         if not auth.ok:
-            st.error("请先配置有效 API 密钥")
+            st.error("未检测到环境中的 DeepSeek API 密钥")
             st.stop()
         if not data_paths:
             st.error("请先上传数据集")
@@ -197,7 +167,7 @@ def main() -> None:
             data=[str(p) for p in data_paths],
             task_spec=placeholder,
             project_root=root,
-            api_key=effective_key or auth.api_key,
+            api_key=auth.api_key,
         )
         state = run_with_progress(
             orch,
