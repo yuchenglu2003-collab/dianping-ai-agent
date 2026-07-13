@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 import plotly.express as px
 
+from src.tools._data_io import load_analysis_frame, resolve_tool_input_path
 from src.tools.base import BaseTool, ToolResult
 from src.tools.viz._plotly_io import save_plotly_figure
 
@@ -16,13 +17,16 @@ class EdaTimeseriesTool(BaseTool):
     required_columns = ["review_time"]
 
     def run(self, ctx, **kwargs: Any) -> ToolResult:
-        input_path = Path(kwargs.get("input") or ctx.state.artifacts.get("clean_data") or "")
+        input_path = resolve_tool_input_path(ctx, kwargs)
         if not input_path.exists():
             return ToolResult(success=False, error=f"找不到清洗数据: {input_path}")
 
-        df = pd.read_parquet(input_path) if input_path.suffix == ".parquet" else pd.read_csv(input_path)
+        df = load_analysis_frame(input_path, schema_hints=ctx.config.get("schema_hints"))
         if "review_time" not in df.columns:
-            return ToolResult(success=False, error="缺少 review_time 字段，跳过时序分析")
+            return ToolResult(
+                success=False,
+                error=f"缺少 review_time 字段（或 comment_time 等别名）。当前列：{list(df.columns)[:20]}",
+            )
 
         df = df.copy()
         df["review_time"] = pd.to_datetime(df["review_time"], errors="coerce")

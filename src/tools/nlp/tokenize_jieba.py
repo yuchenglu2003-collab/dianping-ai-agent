@@ -6,6 +6,7 @@ from typing import Any
 import jieba
 import pandas as pd
 
+from src.tools._data_io import load_analysis_frame, resolve_tool_input_path
 from src.tools.base import BaseTool, ToolResult
 
 
@@ -22,13 +23,16 @@ class TokenizeJiebaTool(BaseTool):
     required_columns = ["content"]
 
     def run(self, ctx, **kwargs: Any) -> ToolResult:
-        input_path = Path(kwargs.get("input") or ctx.state.artifacts.get("clean_data") or "")
+        input_path = resolve_tool_input_path(ctx, kwargs)
         if not input_path.exists():
             return ToolResult(success=False, error=f"找不到清洗数据: {input_path}")
 
-        df = pd.read_parquet(input_path) if input_path.suffix == ".parquet" else pd.read_csv(input_path)
+        df = load_analysis_frame(input_path, schema_hints=ctx.config.get("schema_hints"))
         if "content" not in df.columns:
-            return ToolResult(success=False, error="缺少 content 字段")
+            return ToolResult(
+                success=False,
+                error=f"缺少 content 字段（或 cus_comment 等别名）。当前列：{list(df.columns)[:20]}",
+            )
 
         stopwords = set(DEFAULT_STOPWORDS)
         freq: dict[str, int] = {}
