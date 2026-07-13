@@ -24,11 +24,20 @@ class EdaTimeseriesTool(BaseTool):
         if "review_time" not in df.columns:
             return ToolResult(
                 success=False,
-                error=f"缺少时间字段（review_time / 成交时间 等）。当前列：{list(df.columns)[:20]}",
+                error=(
+                    "缺少时间字段（review_time / event_time / 成交时间 / time 等）。"
+                    f"当前列：{list(df.columns)[:20]}"
+                ),
             )
 
         df = df.copy()
-        df["review_time"] = pd.to_datetime(df["review_time"], errors="coerce")
+        # 若仍是原始值（ensure 未转成 datetime），再转一次
+        if not pd.api.types.is_datetime64_any_dtype(df["review_time"]):
+            num = pd.to_numeric(df["review_time"], errors="coerce")
+            if num.notna().mean() > 0.5 and num.dropna().median() > 1e9:
+                df["review_time"] = pd.to_datetime(num, unit="s", errors="coerce")
+            else:
+                df["review_time"] = pd.to_datetime(df["review_time"], errors="coerce")
         df = df.dropna(subset=["review_time"])
         if df.empty:
             return ToolResult(success=False, error="有效时间字段为空")
@@ -46,11 +55,21 @@ class EdaTimeseriesTool(BaseTool):
             aggs["shop_count"] = ("shop_id", "nunique")
         if "order_id" in df.columns:
             aggs["order_count"] = ("order_id", "nunique")
+        if "event_type" in df.columns:
+            # 行为日志：额外统计购买事件
+            buy = df["event_type"].astype(str).str.lower().isin(["buy", "order", "purchase", "购买"])
+            df = df.assign(_buy=buy.astype(int))
+            aggs["buy_count"] = ("_buy", "sum")
 
         daily = df.groupby("date").agg(**aggs).reset_index()
 
         outputs: dict[str, str] = {}
-        count_title = "每日销量/订单量趋势" if "sales_qty" in df.columns or "order_id" in df.columns else "每日评论量趋势"
+        if "sales_qty" in df.columns or "order_id" in df.columns:
+            count_title = "每日销量/订单量趋势"
+        elif "event_type" in df.columns:
+            count_title = "每日行为事件量趋势"
+        else:
+            count_title = "每日评论量趋势"
         y_count = "sales_qty_sum" if "sales_qty_sum" in daily.columns else "event_count"
         fig = px.line(daily, x="date", y=y_count, title=count_title)
         base = ctx.artifact_store.figure_path("reviews_over_time").with_suffix("")
@@ -58,6 +77,14 @@ class EdaTimeseriesTool(BaseTool):
         outputs["reviews_over_time"] = str(html)
         if png:
             outputs["reviews_over_time_png"] = str(png)
+
+        if "user_count" in daily.columns:
+            fig_u = px.line(daily, x="date", y="user_count", title="每日 UV 趋势")
+            base_u = ctx.artifact_store.figure_path("users_over_time").with_suffix("")
+            html_u, png_u = save_plotly_figure(fig_u, base_u)
+            outputs["users_over_time"] = str(html_u)
+            if png_u:
+                outputs["users_over_time_png"] = str(png_u)
 
         if "score_mean" in daily.columns:
             fig2 = px.line(daily, x="date", y="score_mean", title="每日均分趋势")

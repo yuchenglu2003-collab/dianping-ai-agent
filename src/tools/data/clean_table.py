@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.data_resolver import load_table
 from src.infra.schema_adapter import apply_schema_hints, rename_to_standard
+from src.tools._data_io import ensure_time_column
 from src.tools.base import BaseTool, ToolResult
 
 
@@ -23,6 +24,7 @@ class CleanTableTool(BaseTool):
 
         mapped = apply_schema_hints(df, ctx.config.get("schema_hints", {}))
         df = rename_to_standard(df, mapped)
+        df = ensure_time_column(df)
 
         params = ctx.params
         if params.get("drop_duplicates", True):
@@ -45,11 +47,15 @@ class CleanTableTool(BaseTool):
             if num_col in df.columns:
                 df[num_col] = pd.to_numeric(df[num_col], errors="coerce")
 
-        if "review_time" in df.columns:
+        if "review_time" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["review_time"]):
             try:
-                df["review_time"] = pd.to_datetime(df["review_time"], errors="coerce", utc=False)
+                num = pd.to_numeric(df["review_time"], errors="coerce")
+                if num.notna().mean() > 0.5 and float(num.dropna().median()) > 1e9:
+                    df["review_time"] = pd.to_datetime(num, unit="s", errors="coerce")
+                else:
+                    df["review_time"] = pd.to_datetime(df["review_time"], errors="coerce", utc=False)
             except Exception:
-                df["review_time"] = pd.NaT
+                pass
 
         # 评论场景按 score/content 去空；销售场景按销量/订单
         if {"score", "content"} & set(df.columns):
