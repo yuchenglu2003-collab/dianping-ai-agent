@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -13,8 +12,8 @@ from src.tools.viz._plotly_io import save_plotly_figure
 
 class PlotDistributionsTool(BaseTool):
     name = "plot_distributions"
-    description = "绘制评分、门店等分布图"
-    required_any_columns = [["score"], ["shop_id"]]
+    description = "绘制分布图（评论评分/门店，或销量/单价/商品等）"
+    required_any_columns = [["score"], ["shop_id"], ["sales_qty"], ["unit_price"], ["product_id"]]
 
     def run(self, ctx, **kwargs: Any) -> ToolResult:
         input_path = resolve_tool_input_path(ctx, kwargs)
@@ -25,39 +24,93 @@ class PlotDistributionsTool(BaseTool):
         outputs: dict[str, str] = {}
         metrics: dict[str, Any] = {}
 
+        def _hist(series: pd.Series, name: str, title: str, nbins: int = 20) -> None:
+            s = pd.to_numeric(series, errors="coerce").dropna()
+            if s.empty:
+                return
+            fig = px.histogram(s, nbins=nbins, title=title)
+            base = ctx.artifact_store.figure_path(name).with_suffix("")
+            html, png = save_plotly_figure(fig, base)
+            outputs[name] = str(html)
+            if png:
+                outputs[f"{name}_png"] = str(png)
+            metrics[f"{name}_mean"] = float(s.mean())
+            metrics[f"{name}_median"] = float(s.median())
+
+        def _topk_bar(series: pd.Series, name: str, title: str, value_name: str = "count") -> None:
+            counts = series.dropna().astype(str).value_counts().head(30).reset_index()
+            counts.columns = ["label", value_name]
+            if counts.empty:
+                return
+            fig = px.bar(counts, x="label", y=value_name, title=title)
+            base = ctx.artifact_store.figure_path(name).with_suffix("")
+            html, png = save_plotly_figure(fig, base)
+            outputs[name] = str(html)
+            if png:
+                outputs[f"{name}_png"] = str(png)
+            metrics[f"{name}_unique"] = int(series.nunique())
+
+        # ---- 评论场景 ----
         if "score" in df.columns:
-            score = pd.to_numeric(df["score"], errors="coerce").dropna()
-            if len(score):
-                fig = px.histogram(score, nbins=10, title="评分分布")
-                base = ctx.artifact_store.figure_path("score_distribution").with_suffix("")
-                html, png = save_plotly_figure(fig, base)
-                outputs["score_distribution"] = str(html)
-                if png:
-                    outputs["score_distribution_png"] = str(png)
-                metrics["score_unique"] = int(score.nunique())
+            _hist(df["score"], "score_distribution", "评分分布", nbins=10)
+            metrics["score_unique"] = int(pd.to_numeric(df["score"], errors="coerce").nunique())
 
         if "shop_id" in df.columns:
-            shop_counts = df["shop_id"].dropna().astype(str).value_counts().head(30).reset_index()
-            shop_counts.columns = ["shop_id", "review_count"]
-            if len(shop_counts):
-                fig = px.bar(shop_counts, x="shop_id", y="review_count", title="门店评论量 Top30")
-                base = ctx.artifact_store.figure_path("shop_review_count").with_suffix("")
-                html, png = save_plotly_figure(fig, base)
-                outputs["shop_review_count"] = str(html)
-                if png:
-                    outputs["shop_review_count_png"] = str(png)
-                metrics["shop_count"] = int(df["shop_id"].nunique())
+            title = "门店销量 Top30" if "sales_qty" in df.columns else "门店评论量 Top30"
+            if "sales_qty" in df.columns:
+                tmp = df[["shop_id", "sales_qty"]].copy()
+                tmp["sales_qty"] = pd.to_numeric(tmp["sales_qty"], errors="coerce")
+                shop = (
+                    tmp.dropna(subset=["shop_id"])
+                    .groupby(tmp["shop_id"].astype(str), as_index=False)["sales_qty"]
+                    .sum()
+                    .sort_values("sales_qty", ascending=False)
+                    .head(30)
+                )
+                shop.columns = ["label", "sales_qty"]
+                if len(shop):
+                    fig = px.bar(shop, x="label", y="sales_qty", title=title)
+                    base = ctx.artifact_store.figure_path("shop_review_count").with_suffix("")
+                    html, png = save_plotly_figure(fig, base)
+                    outputs["shop_review_count"] = str(html)
+                    if png:
+                        outputs["shop_review_count_png"] = str(png)
+                    metrics["shop_count"] = int(df["shop_id"].nunique())
+            else:
+                _topk_bar(df["shop_id"], "shop_review_count", title)
 
         if "content" in df.columns:
             lengths = df["content"].fillna("").astype(str).str.len()
-            fig = px.histogram(lengths, nbins=40, title="评论长度分布")
-            base = ctx.artifact_store.figure_path("content_length_distribution").with_suffix("")
-            html, png = save_plotly_figure(fig, base)
-            outputs["content_length_distribution"] = str(html)
-            if png:
-                outputs["content_length_distribution_png"] = str(png)
-            metrics["content_len_mean"] = float(lengths.mean()) if len(lengths) else 0.0
-            metrics["content_len_median"] = float(lengths.median()) if len(lengths) else 0.0
+            _hist(lengths, "content_length_distribution", "评论长度分布", nbins=40)
+
+        # ---- 销售/订单场景 ----
+        if "sales_qty" in df.columns:
+            _hist(df["sales_qty"], "sales_qty_distribution", "销量分布", nbins=30)
+        if "unit_price" in df.columns:
+            _hist(df["unit_price"], "unit_price_distribution", "单价分布", nbins=30)
+        if "product_id" in df.columns:
+            _topk_bar(df["product_id"], "product_top", "商品销量次数 Top30")
+        if "category_id" in df.columns:
+            _topk_bar(df["category_id"], "category_top", "类别分布 Top30")
+
+        # ---- 兜底：任意数值列 / 低基数类别列 ----
+        if not outputs:
+            skip = {"order_id", "review_id"}
+            for col in df.columns:
+                if col in skip:
+                    continue
+                num = pd.to_numeric(df[col], errors="coerce")
+                if num.notna().sum() >= max(5, int(len(df) * 0.3)):
+                    _hist(num, f"dist_{col}", f"{col} 分布", nbins=30)
+                    if outputs:
+                        break
+            if not outputs:
+                for col in df.columns:
+                    nunique = df[col].nunique(dropna=True)
+                    if 2 <= nunique <= 50:
+                        _topk_bar(df[col], f"top_{col}", f"{col} Top", value_name="count")
+                        if outputs:
+                            break
 
         ok = bool(outputs)
         cols = [str(c) for c in df.columns]
@@ -69,7 +122,8 @@ class PlotDistributionsTool(BaseTool):
             error=None
             if ok
             else (
-                "没有可绘制的字段（需要 score / shop_id / content 或其别名如 "
-                f"cus_comment、rating）。当前列：{cols[:20]}"
+                "没有可绘制的字段。支持评论字段 score/shop_id/content，"
+                "或销售字段 sales_qty/unit_price/product_id/门店编号/销量/单价 等。"
+                f"当前列：{cols[:20]}"
             ),
         )

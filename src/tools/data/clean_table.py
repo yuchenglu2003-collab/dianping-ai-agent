@@ -13,7 +13,7 @@ from src.tools.base import BaseTool, ToolResult
 class CleanTableTool(BaseTool):
     name = "clean_table"
     description = "去重、缺失与异常值清洗，输出干净数据集"
-    required_any_columns = [["score"], ["content"], ["shop_id"]]
+    required_any_columns = [["score"], ["content"], ["shop_id"], ["sales_qty"], ["order_id"]]
 
     def run(self, ctx, **kwargs: Any) -> ToolResult:
         input_path = Path(kwargs.get("input") or ctx.data_inputs[0])
@@ -41,14 +41,21 @@ class CleanTableTool(BaseTool):
             min_len = int(params.get("min_text_len", 2))
             df = df[df["content"].str.len() >= min_len]
 
+        for num_col in ("sales_qty", "unit_price"):
+            if num_col in df.columns:
+                df[num_col] = pd.to_numeric(df[num_col], errors="coerce")
+
         if "review_time" in df.columns:
-            # 不用 format='mixed' 的重路径；失败则置空，避免底层崩溃
             try:
                 df["review_time"] = pd.to_datetime(df["review_time"], errors="coerce", utc=False)
             except Exception:
                 df["review_time"] = pd.NaT
 
-        key_cols = [c for c in ["score", "content"] if c in df.columns]
+        # 评论场景按 score/content 去空；销售场景按销量/订单
+        if {"score", "content"} & set(df.columns):
+            key_cols = [c for c in ["score", "content"] if c in df.columns]
+        else:
+            key_cols = [c for c in ["sales_qty", "order_id", "shop_id"] if c in df.columns][:1]
         before_na = len(df)
         if key_cols:
             df = df.dropna(subset=key_cols)
@@ -93,7 +100,9 @@ class CleanTableTool(BaseTool):
         )
 
     def _drop_duplicates(self, df: pd.DataFrame) -> pd.DataFrame:
-        """按评论粒度去重，避免仅 shop_id 去重误删大量数据。"""
+        """按评论/订单粒度去重。"""
+        if "order_id" in df.columns:
+            return df.drop_duplicates(subset=["order_id"], keep="first")
         if "review_id" in df.columns:
             return df.drop_duplicates(subset=["review_id"], keep="first")
 
@@ -102,6 +111,7 @@ class CleanTableTool(BaseTool):
             ["user_id", "shop_id", "review_time"],
             ["user_id", "content", "review_time"],
             ["content", "review_time", "shop_id"],
+            ["shop_id", "product_id", "review_time", "sales_qty"],
         ]
         for subset in candidates:
             cols = [c for c in subset if c in df.columns]

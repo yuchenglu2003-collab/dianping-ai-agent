@@ -23,11 +23,16 @@ defaults:
 
 schema_hints:
   review_id: [review_id, id, comment_id]
-  shop_id: [shop_id, store_id, poi_id, shopId, shopID]
-  user_id: [user_id, uid, member_id, userId, cus_id]
-  score: [score, rating, star, stars, overall]
-  content: [content, review, comment, text, review_content, cus_comment]
-  review_time: [review_time, time, created_at, datetime, date, comment_time]
+  shop_id: [shop_id, store_id, poi_id, shopId, shopID, 门店编号, 门店ID, 店铺编号, 门店]
+  user_id: [user_id, uid, member_id, userId, cus_id, 用户ID, 用户编号]
+  score: [score, rating, star, stars, overall, 评分, 星级]
+  content: [content, review, comment, text, review_content, cus_comment, 评论, 评价内容]
+  review_time: [review_time, time, created_at, datetime, date, comment_time, 成交时间, 下单时间, 支付时间, 订单时间, 时间]
+  order_id: [order_id, orderId, 订单ID, 订单编号]
+  product_id: [product_id, sku, goods_id, item_id, 商品ID, 商品编号]
+  category_id: [category_id, cate_id, 类别ID, 类目ID, 分类ID]
+  unit_price: [unit_price, price, 单价, 价格]
+  sales_qty: [sales_qty, qty, quantity, sales, 销量, 销售量, 数量]
 
 llm:
   required: true
