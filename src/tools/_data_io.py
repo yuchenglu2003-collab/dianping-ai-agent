@@ -31,11 +31,22 @@ def ensure_time_column(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def apply_column_mapping(df: pd.DataFrame, column_mapping: dict[str, str] | None) -> pd.DataFrame:
-    """按 raw->std 映射重命名；已是标准名的列保持不变。"""
+    """按 raw->std 映射重命名；每个标准名只保留一列，已是标准名的列保持不变。"""
     if not column_mapping:
         return df
-    rename = {raw: std for raw, std in column_mapping.items() if raw in df.columns and std not in df.columns}
-    # 若清洗后已是标准名，也允许 identity
+    rename: dict[str, str] = {}
+    used_std: set[str] = set(str(c) for c in df.columns)
+    for raw, std in column_mapping.items():
+        raw_s, std_s = str(raw), str(std)
+        if raw_s not in df.columns:
+            continue
+        if raw_s == std_s:
+            used_std.add(std_s)
+            continue
+        if std_s in used_std:
+            continue
+        rename[raw_s] = std_s
+        used_std.add(std_s)
     if not rename:
         return df
     return rename_to_standard(df, rename)

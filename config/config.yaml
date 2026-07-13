@@ -26,8 +26,8 @@ schema_hints:
   review_id: [review_id, id, comment_id]
   shop_id: [shop_id, store_id, poi_id, shopId, shopID, 门店编号, 门店ID, 店铺编号, 门店]
   user_id: [user_id, uid, member_id, userId, cus_id, 用户ID, 用户编号]
-  # stars 优先于 comment_star（后者常为 sml-str40 这类编码）
-  score: [stars, score, rating, star, overall, comment_star, 评分, 星级]
+  # 只用真实评分数值列；comment_star（sml-str40）由清洗阶段解析兜底，不作为主映射
+  score: [stars, score, rating, star, overall, 评分, 星级]
   content: [content, review, comment, text, review_content, cus_comment, 评论, 评价内容]
   review_time: [review_time, comment_time, created_at, datetime, date, 成交时间, 下单时间, 支付时间, 订单时间]
   event_time: [event_time, time, ts, timestamp]

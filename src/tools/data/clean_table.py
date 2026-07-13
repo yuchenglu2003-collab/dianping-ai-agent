@@ -11,10 +11,38 @@ from src.tools._data_io import apply_column_mapping, ensure_time_column, mapping
 from src.tools.base import BaseTool, ToolResult
 
 
+def normalize_score_series(series: pd.Series) -> pd.Series:
+    """把评分列规范到约 1–5：支持数值、sml-str40、10/20/…/50 星级。"""
+    if isinstance(series, pd.DataFrame):
+        series = series.iloc[:, 0]
+    raw = series
+    num = pd.to_numeric(raw, errors="coerce")
+
+    need = num.isna() & raw.notna()
+    if bool(need.any()):
+        extracted = raw.loc[need].astype(str).str.extract(r"(\d+(?:\.\d+)?)", expand=False)
+        num.loc[need] = pd.to_numeric(extracted, errors="coerce")
+
+    valid = num.dropna()
+    if len(valid) > 0 and float(valid.between(10, 50).mean()) > 0.8:
+        # 点评常见 10/20/30/40/50 → 1–5
+        num = num / 10.0
+
+    return num
+
+
 class CleanTableTool(BaseTool):
     name = "clean_table"
     description = "去重、缺失与异常值清洗，输出干净数据集"
-    required_any_columns = [["score"], ["content"], ["shop_id"], ["sales_qty"], ["order_id"]]
+    required_any_columns = [
+        ["score"],
+        ["content"],
+        ["shop_id"],
+        ["sales_qty"],
+        ["order_id"],
+        ["user_id"],
+        ["event_type"],
+    ]
 
     def run(self, ctx, **kwargs: Any) -> ToolResult:
         input_path = Path(kwargs.get("input") or ctx.data_inputs[0])
@@ -35,17 +63,32 @@ class CleanTableTool(BaseTool):
             df = self._drop_duplicates(df)
 
         rows_after_dedup = len(df)
+        is_behavior = "event_type" in df.columns and "content" not in df.columns
+        is_sales = "sales_qty" in df.columns or "order_id" in df.columns
 
-        if "score" in df.columns:
-            df["score"] = pd.to_numeric(df["score"], errors="coerce")
+        if "score" in df.columns and not is_behavior:
+            df["score"] = normalize_score_series(df["score"])
             min_s = float(params.get("min_score", 1))
             max_s = float(params.get("max_score", 5))
-            df = df[(df["score"].isna()) | ((df["score"] >= min_s) & (df["score"] <= max_s))]
+            score_ok = df["score"].isna() | ((df["score"] >= min_s) & (df["score"] <= max_s))
+            filtered = df[score_ok]
+            # 若评分列映射错误导致全部被滤掉，跳过区间过滤，避免空表
+            if len(filtered) == 0 and len(df) > 0:
+                df = df.copy()
+                df["score"] = pd.NA
+            else:
+                df = filtered
 
         if "content" in df.columns:
             df["content"] = df["content"].fillna("").astype(str).str.strip()
+            # 纯数字/ID 误映射成 content 时不要全删：仅过滤空串
             min_len = int(params.get("min_text_len", 2))
-            df = df[df["content"].str.len() >= min_len]
+            text_ok = df["content"].str.len() >= min_len
+            # 若几乎全是空/过短，保留原表（可能是行为/销售表误带了 content）
+            if float(text_ok.mean()) < 0.05 and len(df) > 0:
+                pass
+            else:
+                df = df[text_ok]
 
         for num_col in ("sales_qty", "unit_price"):
             if num_col in df.columns:
@@ -61,14 +104,28 @@ class CleanTableTool(BaseTool):
             except Exception:
                 pass
 
-        # 评论场景按 score/content 去空；销售场景按销量/订单
-        if {"score", "content"} & set(df.columns):
-            key_cols = [c for c in ["score", "content"] if c in df.columns]
-        else:
+        # 按场景选择去空键；不可用的 score（几乎全空）不参与 dropna
+        key_cols: list[str] = []
+        if is_behavior:
+            key_cols = [c for c in ["user_id", "event_type"] if c in df.columns][:1]
+        elif is_sales and "content" not in df.columns:
             key_cols = [c for c in ["sales_qty", "order_id", "shop_id"] if c in df.columns][:1]
+        else:
+            if "content" in df.columns:
+                # content 已转成字符串，用长度过滤即可，不再 dropna
+                pass
+            if "score" in df.columns and float(df["score"].notna().mean()) >= 0.1:
+                key_cols.append("score")
+            if not key_cols:
+                key_cols = [c for c in ["sales_qty", "order_id", "shop_id", "user_id"] if c in df.columns][:1]
+
         before_na = len(df)
         if key_cols:
-            df = df.dropna(subset=key_cols)
+            cleaned = df.dropna(subset=key_cols)
+            # 保底：dropna 若清空整表，回退为不过滤
+            if len(cleaned) == 0 and before_na > 0:
+                cleaned = df
+            df = cleaned
 
         out_dir = Path(ctx.paths.get("clean", ctx.project_root / "data" / "clean"))
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +150,7 @@ class CleanTableTool(BaseTool):
             "dropped_na_rows": int(before_na - len(df)),
             **{f"non_null_rate_{k}": v for k, v in non_null_rates.items()},
         }
-        if "score" in df.columns and len(df):
+        if "score" in df.columns and len(df) and df["score"].notna().any():
             metrics["score_mean"] = float(df["score"].mean())
             metrics["score_std"] = float(df["score"].std(ddof=0) or 0)
 
@@ -122,6 +179,7 @@ class CleanTableTool(BaseTool):
             ["user_id", "content", "review_time"],
             ["content", "review_time", "shop_id"],
             ["shop_id", "product_id", "review_time", "sales_qty"],
+            ["user_id", "product_id", "event_time", "event_type"],
         ]
         for subset in candidates:
             cols = [c for c in subset if c in df.columns]
