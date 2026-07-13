@@ -56,7 +56,11 @@ class CleanTableTool(BaseTool):
         out_dir = Path(ctx.paths.get("clean", ctx.project_root / "data" / "clean"))
         out_dir.mkdir(parents=True, exist_ok=True)
         # 文件名只用 ASCII，避免中文 task_id 在部分环境异常
-        safe_name = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(ctx.task.task_id))[:40] or "task"
+        safe_name = "".join(
+            ch if ch.isascii() and (ch.isalnum() or ch in "-_") else "_"
+            for ch in str(ctx.task.task_id)
+        )
+        safe_name = "_".join(p for p in safe_name.split("_") if p)[:40] or "task"
         csv_path = out_dir / f"{safe_name}_{ctx.run_id}_clean.csv"
         df.to_csv(csv_path, index=False, encoding="utf-8")
 
