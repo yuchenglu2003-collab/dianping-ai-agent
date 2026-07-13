@@ -1,0 +1,7 @@
+name: text_mining
+description: 分词、词云、关键词
+intent_keywords: [词云, 关键词, 分词, 文本挖掘]
+tools:
+  - tokenize_jieba
+  - make_wordcloud
+required_columns: [content]

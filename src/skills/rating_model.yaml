@@ -1,0 +1,6 @@
+name: rating_model
+description: 文本特征 + 多模型对比 + 调参（工具待实现）
+intent_keywords: [评分预测, 模型, tfidf, xgb]
+tools: []
+status: planned
+required_columns: [score, content]

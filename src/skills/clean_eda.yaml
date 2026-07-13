@@ -1,0 +1,9 @@
+name: clean_eda
+description: 清洗 + 分布/时序探索
+intent_keywords: [清洗, eda, 分布, 探索, 可视化]
+tools:
+  - data_profile
+  - clean_table
+  - plot_distributions
+  - eda_timeseries
+required_columns_any: [score, content, shop_id]

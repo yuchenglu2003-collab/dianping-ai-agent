@@ -1,0 +1,47 @@
+project:
+  name: dianping-agent
+  seed: 42
+
+paths:
+  raw: data/raw
+  clean: data/clean
+  features: data/features
+  artifacts: artifacts
+  tasks: tasks
+  logs: logs/runs
+
+defaults:
+  positive_threshold: 4
+  vectorizer: tfidf
+  models: [nb, rf, xgb]
+  forecast_horizon_days: 30
+  anomaly_method: isolation_forest
+  drop_duplicates: true
+  min_text_len: 2
+  max_score: 5
+  min_score: 1
+
+schema_hints:
+  review_id: [review_id, id, comment_id]
+  shop_id: [shop_id, store_id, poi_id, shopId, shopID]
+  user_id: [user_id, uid, member_id, userId, cus_id]
+  score: [score, rating, star, stars, overall]
+  content: [content, review, comment, text, review_content, cus_comment]
+  review_time: [review_time, time, created_at, datetime, date, comment_time]
+
+llm:
+  required: true
+  provider: deepseek
+  base_url: https://api.deepseek.com/v1
+  model: deepseek-chat
+  temperature: 0.2
+  max_tokens: 4096
+  timeout_sec: 90
+  max_retries: 2
+  json_mode: true
+  allow_rule_fallback: true
+
+orchestrator:
+  max_retries: 2
+  stop_on_infeasible: true
+  block_without_api_key: true

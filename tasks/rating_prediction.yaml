@@ -1,0 +1,16 @@
+task_id: rating_prediction
+goal: 构建评分预测模型并对比多算法效果（当前版本先完成清洗与特征准备链路的可运行骨架，建模工具将在下一阶段补齐）
+data: []
+deliverables:
+  - clean_data
+  - EDA分布图
+  - 词云
+acceptance:
+  min_non_null_rate: 0.9
+params:
+  positive_threshold: 4
+  vectorizer: tfidf
+  models: [nb, rf, xgb]
+report:
+  title: 评分预测准备工作报告
+needs_human_review: false

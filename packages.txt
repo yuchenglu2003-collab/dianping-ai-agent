@@ -1,0 +1,2 @@
+# Streamlit Community Cloud 会通过 apt 安装（词云中文需要字体）
+fonts-noto-cjk

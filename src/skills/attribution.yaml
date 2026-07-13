@@ -1,0 +1,6 @@
+name: attribution
+description: 好评方面归因与评论长度归因（工具待实现）
+intent_keywords: [归因, 口味, 服务, 环境]
+tools: []
+status: planned
+required_columns: [score, content]
