@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+# Streamlit Cloud 以 src/ui/app.py 为入口时，需把仓库根目录加入 path
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import streamlit as st
 
@@ -17,7 +23,7 @@ from src.ui.helpers import save_uploaded_files
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return _ROOT
 
 
 def init_page() -> None:
