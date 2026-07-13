@@ -83,15 +83,36 @@ def resolve_data_paths(data: str | Path | list[str | Path] | None, task_data: li
 def load_table(path: Path, nrows: int | None = None) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".csv":
-        return pd.read_csv(path, nrows=nrows)
+        return _read_csv(path, sep=",", nrows=nrows)
     if suffix == ".tsv":
-        return pd.read_csv(path, sep="\t", nrows=nrows)
+        return _read_csv(path, sep="\t", nrows=nrows)
     if suffix == ".parquet":
-        df = pd.read_parquet(path)
+        # 云端可能无 pyarrow；尽量读，失败则明确报错
+        try:
+            df = pd.read_parquet(path)
+        except Exception as e:
+            raise RuntimeError(f"读取 parquet 失败（可改用 CSV）: {e}") from e
         return df.head(nrows) if nrows else df
     if suffix in {".xlsx", ".xls"}:
         return pd.read_excel(path, nrows=nrows)
     raise ValueError(f"不支持的文件类型: {suffix}")
+
+
+def _read_csv(path: Path, *, sep: str, nrows: int | None) -> pd.DataFrame:
+    last_err: Exception | None = None
+    for enc in ("utf-8", "utf-8-sig", "gb18030"):
+        try:
+            return pd.read_csv(
+                path,
+                sep=sep,
+                nrows=nrows,
+                encoding=enc,
+                on_bad_lines="skip",
+                low_memory=False,
+            )
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(f"读取 CSV 失败: {path} | {last_err}")
 
 
 def profile_table(path: Path, schema_hints: dict[str, list[str]] | None = None, sample_n: int = 3) -> TableSummary:
