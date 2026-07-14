@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from src.agent.step_labels import STEP_LABELS
@@ -19,16 +18,26 @@ def run_with_progress(
     on_progress: ProgressCallback | None = None,
     only_step: str | None = None,
     raw_task_text: str | None = None,
+    agent_mode: str | None = None,
 ) -> "AgentState":
     """
     LLM 驱动主流程：
-    AUTH → PROFILE → LLM_SCHEMA_MAP → LLM_PARSE_TASK → LLM_PLAN → EXECUTE → CRITIC → DONE
-    （报告步骤在 plan 内由 llm_render_report 完成）
+    AUTH → PROFILE → LLM_SCHEMA_MAP → LLM_PARSE_TASK
+      → [plan_execute] LLM_PLAN → EXECUTE → CRITIC
+      → [react] ReAct 循环 → CRITIC
     """
 
     def _progress(pct: float, msg: str) -> None:
         if on_progress:
             on_progress(min(max(pct, 0.0), 1.0), msg)
+
+    mode = (agent_mode or orch.config.get("orchestrator", {}).get("mode") or "plan_execute").strip().lower()
+    if mode in {"react", "re-act", "reasoning_acting"}:
+        mode = "react"
+    else:
+        mode = "plan_execute"
+    orch.state.plan_source = mode
+    orch.ctx.extras["agent_mode"] = mode
 
     # ---- AUTH ----
     orch.state.status = "AUTH_CHECK"
@@ -42,7 +51,13 @@ def run_with_progress(
         return orch.state
 
     orch.state.llm_model = auth.model
-    orch.logger.info("开始任务 task_id=%s run_id=%s model=%s", orch.task.task_id, orch.run_id, auth.model)
+    orch.logger.info(
+        "开始任务 task_id=%s run_id=%s model=%s mode=%s",
+        orch.task.task_id,
+        orch.run_id,
+        auth.model,
+        mode,
+    )
 
     # ---- PROFILE ----
     orch.state.status = "PROFILE"
@@ -72,14 +87,12 @@ def run_with_progress(
             schema_map.get("table_kind"),
             schema_map.get("mapping"),
         )
-        # 刷新 schema 快照（含 LLM 映射）
         (orch.run_dir / "schema_summary.json").write_text(
             json.dumps(schema.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except Exception as e:
         orch.logger.warning("字段映射失败，将仅用规则 hints: %s", e)
-        # 退回规则映射，避免后续工具完全不认列
         from src.agent.schema_mapper import rule_mapping_from_table
 
         table = schema.primary()
@@ -89,13 +102,19 @@ def run_with_progress(
             table.mapped_columns = dict(fallback)
         (orch.run_dir / "column_mapping.json").write_text(
             json.dumps(
-                {"table_kind": table.table_kind if table else "unknown", "mapping": fallback, "source": "rules_fallback", "notes": [str(e)]},
+                {
+                    "table_kind": table.table_kind if table else "unknown",
+                    "mapping": fallback,
+                    "source": "rules_fallback",
+                    "notes": [str(e)],
+                },
                 ensure_ascii=False,
                 indent=2,
             ),
             encoding="utf-8",
         )
         orch.state.artifacts["column_mapping"] = str(orch.run_dir / "column_mapping.json")
+
     # ---- LLM PARSE TASK ----
     orch.state.status = "LLM_PARSE_TASK"
     _progress(0.12, "LLM 理解任务要求...")
@@ -104,7 +123,6 @@ def run_with_progress(
         orch.task = parsed
         orch.ctx.task = parsed
         orch.state.task_id = parsed.task_id
-        # 更新 artifact store 的 task_id 前缀
         orch.ctx.artifact_store.task_id = parsed.task_id
         (orch.run_dir / "task_spec.json").write_text(
             json.dumps(
@@ -129,7 +147,59 @@ def run_with_progress(
         _progress(1.0, f"任务理解失败：{e}")
         return orch.state
 
-    # ---- LLM PLAN ----
+    if mode == "react":
+        return _run_react(orch, schema, _progress)
+    return _run_plan_execute(orch, schema, _progress, only_step)
+
+
+def _run_react(orch: "Orchestrator", schema, _progress: ProgressCallback) -> "AgentState":
+    from src.agent.react_loop import ReActAgent
+
+    orch.state.status = "REACT"
+    orch.state.plan_source = "react"
+    _progress(0.18, "ReAct：边想边做...")
+    orch.ensure_auth()
+    assert orch._gateway is not None
+
+    max_steps = int(orch.config.get("orchestrator", {}).get("react_max_steps", 12))
+    agent = ReActAgent(orch._gateway, orch.registry, orch.executor, max_steps=max_steps)
+    react_result = agent.run(
+        orch.ctx,
+        orch.task,
+        schema,
+        on_progress=_progress,
+        progress_start=0.18,
+        progress_end=0.92,
+    )
+
+    plan = react_result.as_task_plan(orch.task)
+    orch.state.plan = plan.steps
+    orch.state.feasibility = plan.feasibility
+    orch._save_snapshots(plan)
+
+    (orch.run_dir / "react_trace.json").write_text(
+        json.dumps(react_result.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    orch.state.artifacts["react_trace"] = str(orch.run_dir / "react_trace.json")
+
+    if react_result.error and not react_result.finished and not orch.state.artifacts.get("report"):
+        orch.state.status = "FAILED"
+        orch.state.errors.append({"stage": "react", "error": react_result.error})
+        orch._save_llm_usage()
+        orch._persist_state()
+        _progress(1.0, f"ReAct 失败：{react_result.error}")
+        return orch.state
+
+    return _finish_with_critic(orch, plan, _progress)
+
+
+def _run_plan_execute(
+    orch: "Orchestrator",
+    schema,
+    _progress: ProgressCallback,
+    only_step: str | None,
+) -> "AgentState":
     orch.state.status = "LLM_PLAN"
     _progress(0.18, "LLM 规划分析步骤...")
     try:
@@ -158,10 +228,8 @@ def run_with_progress(
     if plan.feasibility == "partial":
         orch.logger.warning("部分可行，将降级执行: %s", plan.notes)
 
-    # ---- EXECUTE ----
     max_retries = int(orch.config.get("orchestrator", {}).get("max_retries", 2))
     steps = plan.steps
-    # 跳过 plan 里多余的开头 profile（已做过），但仍允许执行
     if only_step:
         steps = [s for s in steps if s["id"] == only_step or s["tool"] == only_step]
         if not steps:
@@ -202,7 +270,10 @@ def run_with_progress(
                 return orch.state
             orch.logger.warning("步骤失败，重试 %s/%s: %s", attempt, max_retries, result.error)
 
-    # ---- CRITIC ----
+    return _finish_with_critic(orch, plan, _progress)
+
+
+def _finish_with_critic(orch: "Orchestrator", plan, _progress: ProgressCallback) -> "AgentState":
     orch.state.status = "CRITIC"
     _progress(0.95, "正在验收分析结果...")
     report = orch.critic.validate_plan_acceptance(orch.ctx, plan)

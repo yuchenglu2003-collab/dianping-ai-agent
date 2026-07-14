@@ -55,6 +55,9 @@ llm:
   allow_rule_fallback: true
 
 orchestrator:
+  # plan_execute = 一次规划后执行；react = Thought→Action→Observation 循环
+  mode: plan_execute
+  react_max_steps: 12
   max_retries: 2
   stop_on_infeasible: true
   block_without_api_key: true

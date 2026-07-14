@@ -97,6 +97,15 @@ def main() -> None:
     st.title("数据分析 Agent")
     st.caption("直连 DeepSeek API。上传数据 + 描述任务，由大模型理解、规划并撰写报告。")
 
+    mode_label = st.radio(
+        "Agent 模式",
+        options=["Plan-Execute（一次规划再执行）", "ReAct（边想边做）"],
+        index=0 if (config.get("orchestrator", {}) or {}).get("mode", "plan_execute") != "react" else 1,
+        horizontal=True,
+        help="Plan-Execute：先规划完整步骤再按序执行。ReAct：每步 Thought→Action→Observation，可中途纠错。",
+    )
+    agent_mode = "react" if mode_label.startswith("ReAct") else "plan_execute"
+
     # ---- 密钥：仅使用环境变量 / Streamlit Secrets / .env ----
     auth = require_api_key(project_root=root, config=config, ping=False)
     if auth.ok:
@@ -174,6 +183,7 @@ def main() -> None:
             orch,
             on_progress=on_progress,
             raw_task_text=task_text.strip(),
+            agent_mode=agent_mode,
         )
 
         if state.status == "DONE":
@@ -232,6 +242,11 @@ def main() -> None:
             if mapping_path and Path(mapping_path).exists():
                 with st.expander("字段识别（原始列 → 标准字段）"):
                     st.json(json.loads(Path(mapping_path).read_text(encoding="utf-8")))
+
+            react_path = state.artifacts.get("react_trace")
+            if react_path and Path(react_path).exists():
+                with st.expander("ReAct 轨迹（Thought / Action / Observation）"):
+                    st.json(json.loads(Path(react_path).read_text(encoding="utf-8")))
 
             if state.status != "DONE":
                 st.warning(f"任务状态：{state.status}")
