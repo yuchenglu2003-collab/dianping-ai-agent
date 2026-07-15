@@ -38,11 +38,14 @@ python -m src.cli run --data data/raw/sample_reviews.csv --task "清洗数据，
 
 ## 架构要点
 
+编排引擎为 **LangGraph**（`src/agent/langgraph_flow.py`），支持 Plan-Execute / ReAct 两分支。
+
 | 模块 | 说明 |
 |------|------|
+| LangGraph | 状态图：认字段 → 解析 → 规划执行 / ReAct → 验收 |
 | Auth Gate | 无密钥拒绝启动 |
 | LLM TaskParser | 自然语言 → TaskSpec |
-| LLM Planner | TaskSpec + Schema → 执行 DAG |
+| LLM Planner / ReAct | 一次规划 DAG，或 Thought→Action→Observation |
 | Tools | 本地清洗/绘图/分词等 |
 | LLM Reporter | 基于 metrics 写 Markdown 报告 |
 

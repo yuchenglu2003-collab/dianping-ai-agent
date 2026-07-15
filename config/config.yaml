@@ -55,6 +55,8 @@ llm:
   allow_rule_fallback: true
 
 orchestrator:
+  # 编排引擎：langgraph（默认）。mode 选计划执行或 ReAct 分支。
+  engine: langgraph
   # plan_execute = 一次规划后执行；react = Thought→Action→Observation 循环
   mode: plan_execute
   react_max_steps: 12

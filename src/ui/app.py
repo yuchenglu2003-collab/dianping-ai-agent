@@ -95,7 +95,7 @@ def main() -> None:
     upload_root.mkdir(parents=True, exist_ok=True)
 
     st.title("数据分析 Agent")
-    st.caption("直连 DeepSeek API。上传数据 + 描述任务，由大模型理解、规划并撰写报告。")
+    st.caption("LangGraph 编排 · 直连 DeepSeek API。上传数据 + 描述任务，由大模型理解并撰写报告。")
 
     mode_label = st.radio(
         "Agent 模式",
