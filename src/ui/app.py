@@ -1,4 +1,4 @@
-"""大众点评数据分析 AI Agent — LLM 驱动交互界面。"""
+"""点评数析 — 数据分析 Agent 交互界面。"""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from src.agent.state import AgentState
 from src.config_loader import load_config
 from src.task_spec import TaskSpec
 from src.ui.helpers import save_uploaded_files
+from src.ui.styles import inject_styles
 
 
 def project_root() -> Path:
@@ -29,20 +30,12 @@ def project_root() -> Path:
 
 def init_page() -> None:
     st.set_page_config(
-        page_title="数据分析 Agent",
-        page_icon="📊",
+        page_title="点评数析",
+        page_icon="◧",
         layout="centered",
         initial_sidebar_state="collapsed",
     )
-    st.markdown(
-        """
-        <style>
-        .block-container { max-width: 820px; padding-top: 2rem; }
-        .stTextArea textarea { min-height: 140px; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    inject_styles()
 
 
 def _render_report_with_assets(report_path: Path, content: str) -> None:
@@ -80,7 +73,7 @@ def main() -> None:
     os.environ.setdefault("MPLCONFIGDIR", str(root / ".mplconfig"))
     os.environ.setdefault("MPLBACKEND", "Agg")
     (root / ".mplconfig").mkdir(parents=True, exist_ok=True)
-    # 云端 Secrets → 环境变量（方便子模块统一读取）
+
     try:
         if "DEEPSEEK_API_KEY" in st.secrets:
             os.environ.setdefault("DEEPSEEK_API_KEY", str(st.secrets["DEEPSEEK_API_KEY"]))
@@ -90,60 +83,105 @@ def main() -> None:
             os.environ.setdefault("DEEPSEEK_MODEL", str(st.secrets["DEEPSEEK_MODEL"]))
     except Exception:
         pass
+
     config = load_config(project_root=root)
     upload_root = root / "data" / "uploads"
     upload_root.mkdir(parents=True, exist_ok=True)
 
-    st.title("数据分析 Agent")
-    st.caption("LangGraph 编排 · 直连 DeepSeek API。上传数据 + 描述任务，由大模型理解并撰写报告。")
+    auth = require_api_key(project_root=root, config=config, ping=False)
 
+    # —— 首屏：品牌 + 上传 + 任务 ——
+    st.markdown(
+        """
+        <div class="dx-hero">
+          <h1 class="dx-brand"><span>点评数析</span></h1>
+          <p class="dx-lead">上传商家数据，用一句话说明要做什么。Agent 会理解任务、跑分析并写出报告。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if auth.ok:
+        st.markdown(
+            f'<p class="dx-status ok">DeepSeek 已就绪 · {auth.model}</p>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<p class="dx-status warn">尚未配置 API 密钥：本地写入 .env 的 DEEPSEEK_API_KEY，云端用 Streamlit Secrets</p>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        """
+        <div class="dx-section">
+          <p class="dx-label">数据集</p>
+          <p class="dx-hint">支持 CSV / TSV / Excel / Parquet，可多文件</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    uploaded = st.file_uploader(
+        "数据集",
+        type=["csv", "tsv", "xlsx", "xls", "parquet"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+    )
+
+    file_names: list[str] = []
+    if uploaded:
+        file_names = [f.name for f in uploaded]
+    elif st.session_state.get("saved_data_names"):
+        file_names = list(st.session_state["saved_data_names"])
+    if file_names:
+        st.caption("已选：" + "、".join(file_names))
+
+    st.markdown(
+        """
+        <div class="dx-section">
+          <p class="dx-label">任务描述</p>
+          <p class="dx-hint">直接写你想看的结论，例如清洗、评分分布、词云、漏斗或销量预测</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    task_text = st.text_area(
+        "任务要求",
+        placeholder="对评论做清洗，画出评分分布和时序趋势，再做词云；最后写一份简短分析报告。",
+        height=160,
+        label_visibility="collapsed",
+    )
+
+    st.markdown('<div class="dx-mode-wrap"></div>', unsafe_allow_html=True)
+    default_react = (config.get("orchestrator", {}) or {}).get("mode", "plan_execute") == "react"
     mode_label = st.radio(
         "Agent 模式",
-        options=["Plan-Execute（一次规划再执行）", "ReAct（边想边做）"],
-        index=0 if (config.get("orchestrator", {}) or {}).get("mode", "plan_execute") != "react" else 1,
+        options=["一次规划", "边想边做"],
+        index=1 if default_react else 0,
         horizontal=True,
-        help="Plan-Execute：先规划完整步骤再按序执行。ReAct：每步 Thought→Action→Observation，可中途纠错。",
+        help="一次规划：先生成完整步骤再执行。边想边做：ReAct，每步思考后调用工具。",
+        label_visibility="collapsed",
     )
-    agent_mode = "react" if mode_label.startswith("ReAct") else "plan_execute"
+    agent_mode = "react" if mode_label == "边想边做" else "plan_execute"
 
-    # ---- 密钥：仅使用环境变量 / Streamlit Secrets / .env ----
-    auth = require_api_key(project_root=root, config=config, ping=False)
+    st.markdown('<div class="dx-cta"></div>', unsafe_allow_html=True)
+    can_run = bool(auth.ok)
+    run = st.button("开始分析", type="primary", use_container_width=True, disabled=not can_run)
+
     if auth.ok:
-        st.caption(f"DeepSeek：{auth.message} · 模型：{auth.model}")
+        st.markdown('<div class="dx-tools"></div>', unsafe_allow_html=True)
         if st.button("测试 DeepSeek 连接", use_container_width=True):
             test = require_api_key(project_root=root, config=config, ping=True)
             if test.ok:
                 st.success(test.message)
             else:
                 st.error(test.message)
-    else:
-        st.warning(
-            auth.message
-            + "（本地写入 .env 的 DEEPSEEK_API_KEY，云端在 Streamlit Secrets 配置）"
-        )
-
-    uploaded = st.file_uploader(
-        "数据集",
-        type=["csv", "tsv", "xlsx", "xls", "parquet"],
-        accept_multiple_files=True,
-    )
-
-    task_text = st.text_area(
-        "任务要求",
-        placeholder=(
-            "例如：对评论数据做清洗，输出评分分布和时序趋势图，"
-            "并做词云分析高频关键词；如有需要附上清洗后的数据。"
-        ),
-        height=160,
-    )
-
-    can_run = auth.ok
-    run = st.button("开始分析", type="primary", use_container_width=True, disabled=not can_run)
 
     data_paths: list[Path] = []
     if uploaded:
         data_paths = save_uploaded_files(uploaded, upload_root)
         st.session_state["saved_data_paths"] = [str(p) for p in data_paths]
+        st.session_state["saved_data_names"] = [p.name for p in data_paths]
     elif st.session_state.get("saved_data_paths"):
         data_paths = [Path(p) for p in st.session_state["saved_data_paths"]]
 
@@ -155,10 +193,9 @@ def main() -> None:
             st.error("请先上传数据集")
             st.stop()
         if not task_text.strip():
-            st.error("请填写任务要求")
+            st.error("请填写任务描述")
             st.stop()
 
-        # 占位 TaskSpec，真正理解交给 LLM
         placeholder = TaskSpec(
             task_id="pending_llm_parse",
             goal=task_text.strip(),
@@ -187,8 +224,8 @@ def main() -> None:
         )
 
         if state.status == "DONE":
-            progress_bar.progress(1.0, text="分析完成 ✓")
-            status_box.success("分析完成，报告已由大模型生成。")
+            progress_bar.progress(1.0, text="分析完成")
+            status_box.success("分析完成，报告已生成。")
         elif state.status == "BLOCKED":
             progress_bar.progress(1.0, text="已阻断")
             status_box.error("缺少有效 API 密钥，无法启动 Agent。")
@@ -198,7 +235,9 @@ def main() -> None:
             if state.errors:
                 last = state.errors[-1]
                 err_msg = last.get("error") or last.get("detail") or str(last)
-            status_box.error(f"任务失败（{state.status}）：{err_msg}" if err_msg else f"任务结束：{state.status}")
+            status_box.error(
+                f"任务失败（{state.status}）：{err_msg}" if err_msg else f"任务结束：{state.status}"
+            )
             if state.errors:
                 with st.expander("错误详情", expanded=True):
                     st.json(state.errors)
@@ -209,8 +248,7 @@ def main() -> None:
     if st.session_state.get("last_report"):
         report_path = Path(st.session_state["last_report"])
         if report_path.exists():
-            st.divider()
-            st.subheader("分析报告")
+            st.markdown('<p class="dx-report-head">分析报告</p>', unsafe_allow_html=True)
             content = report_path.read_text(encoding="utf-8")
             _render_report_with_assets(report_path, content)
 
